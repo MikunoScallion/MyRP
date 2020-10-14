@@ -5,12 +5,26 @@ using Conditional = System.Diagnostics.ConditionalAttribute;
 
 public class MyPipeline : RenderPipeline
 {
+    static int cameraColorTextureId = Shader.PropertyToID("_CameraColorTexture");
+    static int cameraDepthTextureId = Shader.PropertyToID("_CameraDepthTexture");
     CullResults cull;
     CommandBuffer cameraBuffer = new CommandBuffer
     {
         name = "Render Camera"
     };
+    CommandBuffer postProcessingBuffer = new CommandBuffer
+    {
+        name = "Post Processing"
+    };
     Material errorMaterial;
+    MyPostProcessingStack defaultStack;
+    float renderScale;
+
+    public MyPipeline(MyPostProcessingStack defaultStack, float renderScale)
+    {
+        this.defaultStack = defaultStack;
+        this.renderScale = renderScale;
+    }
 
     public override void Render(ScriptableRenderContext renderContext, Camera[] cameras)
     {
@@ -18,6 +32,18 @@ public class MyPipeline : RenderPipeline
 
         foreach(var camera in cameras)
         {
+            // var myPipelineCamera = camera.GetComponent<MyPipelineCamera>();
+
+            bool scaledRendering = renderScale < 1f && camera.cameraType == CameraType.Game;
+
+            int renderWidth = camera.pixelWidth;
+            int renderHeight = camera.pixelHeight;
+            if (scaledRendering)
+            {
+                renderWidth = (int) (renderWidth * renderScale);
+                renderHeight = (int) (renderHeight * renderScale);
+            }
+
             RenderSingleCamera(renderContext, camera);
         }
     }
@@ -41,6 +67,15 @@ public class MyPipeline : RenderPipeline
         CullResults.Cull(ref cullingParameters, context, ref cull);
 
         // 该相机的commandbuffer
+        if (defaultStack)
+        {
+            // 将color和depth渲染到自定义的_CameraColorTexture和_CameraDepthTexture RT上
+            cameraBuffer.GetTemporaryRT(cameraColorTextureId, camera.pixelWidth, camera.pixelHeight, 0);
+            cameraBuffer.GetTemporaryRT(cameraDepthTextureId, camera.pixelWidth, camera.pixelHeight, 24,
+                                        FilterMode.Point, RenderTextureFormat.Depth);
+            cameraBuffer.SetRenderTarget(cameraColorTextureId, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store,
+                                         cameraDepthTextureId, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store);
+        }
         CameraClearFlags clearFlags = camera.clearFlags;
         cameraBuffer.ClearRenderTarget(
                                 (clearFlags & CameraClearFlags.Depth) != 0, 
@@ -63,7 +98,7 @@ public class MyPipeline : RenderPipeline
         };
         context.DrawRenderers(cull.visibleRenderers, ref drawSettings, filterSettings);
 
-        //skybox
+        // skybox
         context.DrawSkybox(camera);
 
         // 渲染透明物体
@@ -72,6 +107,16 @@ public class MyPipeline : RenderPipeline
         context.DrawRenderers(cull.visibleRenderers, ref drawSettings, filterSettings);
 
         DrawDefaultPipeline(context, camera);   // 渲染材质shader不被管线支持的物体
+
+        // 后处理
+        if (defaultStack)
+        {
+            defaultStack.Render(postProcessingBuffer, cameraColorTextureId, cameraDepthTextureId);
+            context.ExecuteCommandBuffer(postProcessingBuffer);
+            postProcessingBuffer.Clear();
+            cameraBuffer.ReleaseTemporaryRT(cameraColorTextureId);
+            cameraBuffer.ReleaseTemporaryRT(cameraDepthTextureId);
+        }
 
         cameraBuffer.EndSample("Render Camera");
         context.ExecuteCommandBuffer(cameraBuffer);
@@ -94,9 +139,9 @@ public class MyPipeline : RenderPipeline
         var drawSettings = new DrawRendererSettings(camera, new ShaderPassName("ForwardBase"));
         drawSettings.SetShaderPassName(1, new ShaderPassName("PrepassBase"));
         drawSettings.SetShaderPassName(2, new ShaderPassName("Always"));
-		drawSettings.SetShaderPassName(3, new ShaderPassName("Vertex"));
-		drawSettings.SetShaderPassName(4, new ShaderPassName("VertexLMRGBM"));
-		drawSettings.SetShaderPassName(5, new ShaderPassName("VertexLM"));
+        drawSettings.SetShaderPassName(3, new ShaderPassName("Vertex"));
+        drawSettings.SetShaderPassName(4, new ShaderPassName("VertexLMRGBM"));
+        drawSettings.SetShaderPassName(5, new ShaderPassName("VertexLM"));
         drawSettings.SetOverrideMaterial(errorMaterial, 0);
         var filterSettings = new FilterRenderersSettings(true);
         context.DrawRenderers(cull.visibleRenderers, ref drawSettings, filterSettings);

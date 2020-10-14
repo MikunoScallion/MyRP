@@ -179,8 +179,8 @@
 #endif
 #include "API/Validate.hlsl"
 
-#include "ShaderLibrary/Macros.hlsl"
-#include "ShaderLibrary/Random.hlsl"
+#include "Macros.hlsl"
+#include "Random.hlsl"
 
 // ----------------------------------------------------------------------------
 // Common intrinsic (general implementation of intrinsic available on some platform)

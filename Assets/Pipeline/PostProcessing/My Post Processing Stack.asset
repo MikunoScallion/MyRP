@@ -9,8 +9,6 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b2b8976f2917c8041acac0e568edff1b, type: 3}
-  m_Name: My Pipeline
+  m_Script: {fileID: 11500000, guid: 007de472467280343a3409d181ecced0, type: 3}
+  m_Name: My Post Processing Stack
   m_EditorClassIdentifier: 
-  renderScale: 0.25
-  defaultStack: {fileID: 11400000, guid: 69a6dc0770d8f1b42a841557f4520775, type: 2}
