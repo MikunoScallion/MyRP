@@ -19,9 +19,14 @@ public class MyPipeline : RenderPipeline
     Material errorMaterial;
     MyPostProcessingStack defaultStack;
     float renderScale;
+    DrawRendererFlags drawFlags;
 
-    public MyPipeline(MyPostProcessingStack defaultStack, float renderScale)
+    public MyPipeline(bool dynamicBatching, bool instancing, MyPostProcessingStack defaultStack, float renderScale)
     {
+        if (dynamicBatching)
+            drawFlags = DrawRendererFlags.EnableDynamicBatching;
+        if (instancing)
+            drawFlags = DrawRendererFlags.EnableInstancing;
         this.defaultStack = defaultStack;
         this.renderScale = renderScale;
     }
@@ -88,8 +93,8 @@ public class MyPipeline : RenderPipeline
 
         // 渲染物体
         var drawSettings = new DrawRendererSettings(camera, new ShaderPassName("SRPDefaultUnlit"));
-        // 开启动态批处理
-        drawSettings.flags = DrawRendererFlags.EnableDynamicBatching;
+        // 动态批处理
+        drawSettings.flags = drawFlags;
         // 不透明物体
         drawSettings.sorting.flags = SortFlags.CommonOpaque;    // 不透明物体从近到远排序
         var filterSettings = new FilterRenderersSettings(true)
