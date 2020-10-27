@@ -5,9 +5,23 @@ using Conditional = System.Diagnostics.ConditionalAttribute;
 
 public class MyPipeline : RenderPipeline
 {
+    // Lighting
+    const int maxVisibleLights = 4;
+    static int visibleLightColorsId = Shader.PropertyToID("_VisibleLightColors");
+    static int visibleLightDirectionsId = Shader.PropertyToID("_VisibleLightDirectionsOrPositions");
+    static int visibleLightAttenuationsId = Shader.PropertyToID("_VisibleLightAttenuations");
+    static int visibleLightSpotDirectionsId = Shader.PropertyToID("_visibleLightSpotDirections");
+    Vector4[] visibleLightColors = new Vector4[maxVisibleLights];
+    Vector4[] VisibleLightDirectionsOrPositions = new Vector4[maxVisibleLights];
+    Vector4[] visibleLightAttenuations = new Vector4[maxVisibleLights];
+    Vector4[] visibleLightSpotDirections = new Vector4[maxVisibleLights];
+
+    // RT
     static int cameraColorTextureId = Shader.PropertyToID("_CameraColorTexture");
     static int cameraDepthTextureId = Shader.PropertyToID("_CameraDepthTexture");
-    CullResults cull;
+    float renderScale;
+
+    // Command Buffer
     CommandBuffer cameraBuffer = new CommandBuffer
     {
         name = "Render Camera"
@@ -16,13 +30,15 @@ public class MyPipeline : RenderPipeline
     {
         name = "Post Processing"
     };
+
+    CullResults cull;
     Material errorMaterial;
     MyPostProcessingStack defaultStack;
-    float renderScale;
     DrawRendererFlags drawFlags;
 
     public MyPipeline(bool dynamicBatching, bool instancing, MyPostProcessingStack defaultStack, float renderScale)
     {
+        GraphicsSettings.lightsUseLinearIntensity = true;
         if (dynamicBatching)
             drawFlags = DrawRendererFlags.EnableDynamicBatching;
         if (instancing)
@@ -50,6 +66,56 @@ public class MyPipeline : RenderPipeline
             }
 
             RenderSingleCamera(renderContext, camera);
+        }
+    }
+
+    void ConfigureLights()
+    {
+        // 同时最多只有数量为maxVisibleLights的visible lights
+        int i = 0;
+        for (; i < cull.visibleLights.Count; i++)
+        {
+            if (i == maxVisibleLights)
+                break;
+
+            VisibleLight light = cull.visibleLights[i];
+            Vector4 attenuation = Vector4.zero;
+
+            visibleLightColors[i] = light.finalColor;
+
+            if (light.lightType == LightType.Directional)
+            {
+                Vector4 v = light.localToWorld.GetColumn(2);
+                v.x = -v.x;
+                v.y = -v.y;
+                v.z = -v.z;
+                VisibleLightDirectionsOrPositions[i] = v;
+            }
+            else
+            {
+                VisibleLightDirectionsOrPositions[i] = light.localToWorld.GetColumn(3);
+                attenuation.x = 1f / Mathf.Max(light.range * light.range, 0.00001f);
+
+                if (light.lightType == LightType.Spot)
+                {
+                    Vector4 v = light.localToWorld.GetColumn(2);
+                    v.x = -v.x;
+                    v.y = -v.y;
+                    v.z = -v.z;
+                    visibleLightSpotDirections[i] = v;
+
+                    float outerRad = Mathf.Deg2Rad * 0.5f * light.spotAngle;
+                    float outerCos = Mathf.Cos(outerRad);
+                    float outerTan = Mathf.Tan(outerRad);
+                    float innerCos = Mathf.Cos(Mathf.Atan(((46f / 64f) * outerTan)));
+                }
+            }
+
+            visibleLightAttenuations[i] = attenuation;
+        }
+        for (; i < maxVisibleLights; i++)
+        {
+            visibleLightColors[i] = Color.clear;
         }
     }
 
@@ -82,12 +148,17 @@ public class MyPipeline : RenderPipeline
                                          cameraDepthTextureId, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store);
         }
         CameraClearFlags clearFlags = camera.clearFlags;
-        cameraBuffer.ClearRenderTarget(
-                                (clearFlags & CameraClearFlags.Depth) != 0, 
-                                (clearFlags & CameraClearFlags.Color) != 0, 
-                                camera.backgroundColor
-                                );
+        cameraBuffer.ClearRenderTarget((clearFlags & CameraClearFlags.Depth) != 0, 
+                                       (clearFlags & CameraClearFlags.Color) != 0, 
+                                        camera.backgroundColor);
+
+        ConfigureLights();
+
         cameraBuffer.BeginSample("Render Camera");
+        cameraBuffer.SetGlobalVectorArray(visibleLightColorsId, visibleLightColors);
+        cameraBuffer.SetGlobalVectorArray(visibleLightDirectionsId, VisibleLightDirectionsOrPositions);
+        cameraBuffer.SetGlobalVectorArray(visibleLightAttenuationsId, visibleLightAttenuations);
+        cameraBuffer.SetGlobalVectorArray(visibleLightSpotDirectionsId, visibleLightSpotDirections);
         context.ExecuteCommandBuffer(cameraBuffer);     // 执行是拷贝到中间buffer
         cameraBuffer.Clear();
 
