@@ -10,7 +10,7 @@ public class MyPipeline : RenderPipeline
     static int visibleLightColorsId = Shader.PropertyToID("_VisibleLightColors");
     static int visibleLightDirectionsId = Shader.PropertyToID("_VisibleLightDirectionsOrPositions");
     static int visibleLightAttenuationsId = Shader.PropertyToID("_VisibleLightAttenuations");
-    static int visibleLightSpotDirectionsId = Shader.PropertyToID("_visibleLightSpotDirections");
+    static int visibleLightSpotDirectionsId = Shader.PropertyToID("_VisibleLightSpotDirections");
     Vector4[] visibleLightColors = new Vector4[maxVisibleLights];
     Vector4[] VisibleLightDirectionsOrPositions = new Vector4[maxVisibleLights];
     Vector4[] visibleLightAttenuations = new Vector4[maxVisibleLights];
@@ -51,7 +51,7 @@ public class MyPipeline : RenderPipeline
     {
         base.Render(renderContext, cameras);
 
-        foreach(var camera in cameras)
+        foreach (var camera in cameras)
         {
             // var myPipelineCamera = camera.GetComponent<MyPipelineCamera>();
 
@@ -61,8 +61,8 @@ public class MyPipeline : RenderPipeline
             int renderHeight = camera.pixelHeight;
             if (scaledRendering)
             {
-                renderWidth = (int) (renderWidth * renderScale);
-                renderHeight = (int) (renderHeight * renderScale);
+                renderWidth = (int)(renderWidth * renderScale);
+                renderHeight = (int)(renderHeight * renderScale);
             }
 
             RenderSingleCamera(renderContext, camera);
@@ -80,6 +80,7 @@ public class MyPipeline : RenderPipeline
 
             VisibleLight light = cull.visibleLights[i];
             Vector4 attenuation = Vector4.zero;
+            attenuation.w = 1; 
 
             visibleLightColors[i] = light.finalColor;
 
@@ -107,7 +108,10 @@ public class MyPipeline : RenderPipeline
                     float outerRad = Mathf.Deg2Rad * 0.5f * light.spotAngle;
                     float outerCos = Mathf.Cos(outerRad);
                     float outerTan = Mathf.Tan(outerRad);
-                    float innerCos = Mathf.Cos(Mathf.Atan(((46f / 64f) * outerTan)));
+                    float innerCos = Mathf.Cos(Mathf.Atan(((64f - 18f) / 64f) * outerTan));
+                    float angleRange = Mathf.Max(innerCos - outerCos, 0.001f);
+                    attenuation.z = 1f / angleRange;
+                    attenuation.w = -outerCos * attenuation.z;
                 }
             }
 
@@ -148,8 +152,8 @@ public class MyPipeline : RenderPipeline
                                          cameraDepthTextureId, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store);
         }
         CameraClearFlags clearFlags = camera.clearFlags;
-        cameraBuffer.ClearRenderTarget((clearFlags & CameraClearFlags.Depth) != 0, 
-                                       (clearFlags & CameraClearFlags.Color) != 0, 
+        cameraBuffer.ClearRenderTarget((clearFlags & CameraClearFlags.Depth) != 0,
+                                       (clearFlags & CameraClearFlags.Color) != 0,
                                         camera.backgroundColor);
 
         ConfigureLights();

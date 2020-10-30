@@ -49,9 +49,14 @@
         rangeFade = saturate(1.0 - rangeFade * rangeFade);      // 1 - d^2/r^2
         rangeFade *= rangeFade;         // (1 - d^2/r^2)^2
 
-        // ? 这里他原来又除以d^2不清楚为什么
+        float spotFade = dot(lightSpotDirection, lightDirection);
+        spotFade = saturate(spotFade * lightAttenuation.z + lightAttenuation.w);
+        spotFade *= spotFade;
+
+        // ? 这里他又除以d^2不清楚为什么
         // float distanceSqr = max(dot(lightVector, lightVector), 0.00001); 
-        diffuse *= rangeFade;// / distanceSqr; 
+        // diffuse *= spotFade * rangeFade / distanceSqr; 
+        diffuse *= spotFade * rangeFade; 
         return diffuse * lightColor;
     }
 
