@@ -1,7 +1,7 @@
 ﻿#ifndef MYRP_POST_EFFECT_STACK_INCLUDED
     #define MYRP_POST_EFFECT_STACK_INCLUDED
 
-    #include "Library/StdLib.hlsl"
+    #include "ShaderLibrary/StdLib.hlsl"
 
     TEXTURE2D_SAMPLER2D(_MainTex, sampler_MainTex);
 
