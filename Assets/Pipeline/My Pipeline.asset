@@ -16,5 +16,8 @@ MonoBehaviour:
   dynamicBatching: 1
   instancing: 1
   defaultStack: {fileID: 11400000, guid: 69a6dc0770d8f1b42a841557f4520775, type: 2}
-  shadowMapSize: 2048
+  shadowMapSize: 1024
   shadowDistance: 50
+  shadowCascades: 4
+  twoCascadesSplit: 0.25
+  fourCascadesSplit: {x: 0.067, y: 0.2, z: 0.467}

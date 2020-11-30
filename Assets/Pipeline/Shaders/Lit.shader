@@ -13,6 +13,7 @@
             #pragma target 3.5
 
             #pragma multi_compile_instancing
+            #pragma multi_compile _ _CASCADED_SHADOWS_HARD _CASCADED_SHADOWS_SOFT
             #pragma multi_compile _ _SHADOWS_SOFT
             #pragma multi_compile _ _SHADOWS_HARD
             // 只考虑规则缩放，不会将normal需要的消除不规则缩放影响的M矩阵包含进来

@@ -35,8 +35,27 @@ public class MyPipelineAsset : RenderPipelineAsset
     [SerializeField]
     float shadowDistance = 100f;
 
+    public enum ShadowCascades
+    {
+        _0 = 0,
+        _2 = 2,
+        _4 = 4
+    }
+    [SerializeField]
+    ShadowCascades shadowCascades = ShadowCascades._4;
+
+    [SerializeField, HideInInspector]
+    float twoCascadesSplit = 0.25f;
+
+    [SerializeField, HideInInspector]
+    Vector3 fourCascadesSplit = new Vector3(0.067f, 0.2f, 0.467f);
+
     protected override IRenderPipeline InternalCreatePipeline()
     {
-        return new MyPipeline(dynamicBatching, instancing, (int)shadowMapSize, shadowDistance, defaultStack, renderScale);
+        Vector3 shadowCascadeSplit = shadowCascades == ShadowCascades._4 ? fourCascadesSplit : new Vector3(twoCascadesSplit, 0f);
+        return new MyPipeline  (dynamicBatching, instancing, 
+                                (int) shadowMapSize, shadowDistance, 
+                                (int) shadowCascades, shadowCascadeSplit, 
+                                defaultStack, renderScale);
     }
 }
