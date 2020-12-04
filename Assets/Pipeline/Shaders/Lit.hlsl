@@ -8,8 +8,20 @@
     #include "ShaderLibrary/UnityInstancing.hlsl"
     #include "ShaderLibrary/Shadow/ShadowSamplingTent.hlsl"
 
+    UNITY_INSTANCING_BUFFER_START(PerInstance)
+    UNITY_DEFINE_INSTANCED_PROP(float4, _Color)
+    UNITY_INSTANCING_BUFFER_END(PerInstance)
+
+    TEXTURE2D(_MainTex);
+    SAMPLER(sampler_MainTex);
+
     // 只有某些平台支持constant buffer, 具体可以看ShaderLibrary/API中各平台的CBUFFER_START(name)和CBUFFER_END宏定义
     // 由于一次cbuffer改动会造成整个cbuffer struct刷新因此按照不同的更新频率对cbuffer进行分组
+    CBUFFER_START(UnityPerMaterial)
+    float4 _MainTex_ST;
+    float _Cutoff;
+    CBUFFER_END
+
     CBUFFER_START(UnityPerFrame)
     float4x4 unity_MatrixVP;
     CBUFFER_END
@@ -33,10 +45,6 @@
     float4 _VisibleLightAttenuations[MAX_VISIBLE_LIGHTS];
     float4 _VisibleLightSpotDirections[MAX_VISIBLE_LIGHTS];
     CBUFFER_END
-
-    UNITY_INSTANCING_BUFFER_START(PerInstance)
-    UNITY_DEFINE_INSTANCED_PROP(float4, _Color)
-    UNITY_INSTANCING_BUFFER_END(PerInstance)
 
     float3 DiffuseLight (int index, float3 normal, float3 worldPos, float shadowAttenuation) 
     {
@@ -122,9 +130,12 @@
 
     float ShadowAttenuation (int index, float3 worldPos) 
     {
-#if !defined(_SHADOWS_HARD) && !defined(_SHADOWS_SOFT)
+#if !defined(_RECEIVE_SHADOWS)
+        return 1.0;
+#elif !defined(_SHADOWS_HARD) && !defined(_SHADOWS_SOFT)
         return 1.0;
 #endif
+
         if (_ShadowData[index].x <= 0 || DistanceToCameraSqr(worldPos) > _GlobalShadowData.y)
             return 1.0;
 
@@ -152,7 +163,9 @@
 
     float CascadedShadowAttenuation (float3 worldPos)
     {
-#if !defined(_CASCADED_SHADOWS_HARD) && !defined(_CASCADED_SHADOWS_SOFT)
+#if !defined(_RECEIVE_SHADOWS)
+        return 1.0;
+#elif !defined(_CASCADED_SHADOWS_HARD) && !defined(_CASCADED_SHADOWS_SOFT)
         return 1.0;
 #endif
 
@@ -164,7 +177,6 @@
                                      InsideCascadeCullingSphere(2, worldPos),
                                      InsideCascadeCullingSphere(3, worldPos));
 
-        // return dot(cascadeFlags, 0.25);
         cascadeFlags.yzw = saturate(cascadeFlags.yzw - cascadeFlags.xyz);
         float cascadeIndex = 4 - dot(cascadeFlags, float4(4, 3, 2, 1));
         float4 shadowPos = mul(_WorldToShadowCascadeMatrices[cascadeIndex], float4(worldPos, 1.0));
@@ -191,6 +203,7 @@
     {
         float4 pos : POSITION;
         float3 normal : NORMAL;
+        float2 uv : TEXCOORD0;
         UNITY_VERTEX_INPUT_INSTANCE_ID
     };
 
@@ -200,6 +213,7 @@
         float3 normal : TEXCOORD0;
         float3 worldPos : TEXCOORD1;
         float3 vertexLighting : TEXCOORD2;
+        float2 uv : TEXCOORD3;
         UNITY_VERTEX_INPUT_INSTANCE_ID
     };
 
@@ -223,16 +237,23 @@
             output.vertexLighting += DiffuseLight(lightIndex, output.normal, output.worldPos, 1);
         }
 
+        output.uv = TRANSFORM_TEX(input.uv, _MainTex);
+
         return output;
     }
 
-    float4 LitPassFragment (VertexOutput input) : SV_TARGET 
+    float4 LitPassFragment (VertexOutput input, FRONT_FACE_TYPE isFrontFace : FRONT_FACE_SEMANTIC) : SV_TARGET 
     {
         UNITY_SETUP_INSTANCE_ID(input);
 
         input.normal = normalize(input.normal);
+        input.normal = IS_FRONT_VFACE(isFrontFace, input.normal, -input.normal);
 
-        float3 albedo = UNITY_ACCESS_INSTANCED_PROP(PerInstance, _Color).rgb;
+        float4 albedoAlpha = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv);
+        albedoAlpha.rgb *= UNITY_ACCESS_INSTANCED_PROP(PerInstance, _Color).rgb;
+#if defined(_CLIPPING_ON)
+        clip(albedoAlpha.a - _Cutoff);
+#endif
 
         float3 diffuseLight = input.vertexLighting;
 #if defined(_CASCADED_SHADOWS_HARD) || defined(_CASCADED_SHADOWS_SOFT)
@@ -246,9 +267,9 @@
             diffuseLight += DiffuseLight(lightIndex, input.normal, input.worldPos, shadowAttenuation);
         }
 
-        float3 color = albedo * diffuseLight;
+        float3 color = albedoAlpha.rgb * diffuseLight;
 
-        return float4(color, 1.0);
+        return float4(color, albedoAlpha.a);
     }
 
 #endif // MYRP_LIT_INCLUDED
