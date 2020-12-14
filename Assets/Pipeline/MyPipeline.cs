@@ -339,6 +339,7 @@ public class MyPipeline : RenderPipeline
 
         cascadedShadowMap = SetShadowRenderTarget();
         shadowBuffer.BeginSample("Render Shadows");
+        shadowBuffer.SetGlobalVector(globalShadowDataId, new Vector4(0f, shadowDistance * shadowDistance));
         context.ExecuteCommandBuffer(shadowBuffer);
         shadowBuffer.Clear();
 
@@ -472,6 +473,10 @@ public class MyPipeline : RenderPipeline
         // 传递灯光参数
         if (cull.visibleLights.Count > 0)
             drawSettings.rendererConfiguration = RendererConfiguration.PerObjectLightIndices8;
+
+        // 绑定环境贴图
+        drawSettings.rendererConfiguration |= RendererConfiguration.PerObjectReflectionProbes;
+
         // 不透明物体
         drawSettings.sorting.flags = SortFlags.CommonOpaque;    // 不透明物体从近到远排序
 

@@ -4,8 +4,8 @@
     // 必须在include UnityInstancing.hlsl之前，UnityInstancing中有对UNITY_MATRIX_M的重定义
     #define UNITY_MATRIX_M unity_ObjectToWorld
 
-    #include "ShaderLibrary/Common.hlsl"
-    #include "ShaderLibrary/UnityInstancing.hlsl"
+    #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
+    #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/UnityInstancing.hlsl"
 
     // 只有某些平台支持constant buffer, 具体可以看ShaderLibrary/API中各平台的CBUFFER_START(name)和CBUFFER_END宏定义
     // 由于一次cbuffer改动会造成整个cbuffer struct刷新因此按照不同的更新频率对cbuffer进行分组

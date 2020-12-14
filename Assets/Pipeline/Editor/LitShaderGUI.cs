@@ -36,6 +36,14 @@ public class LitShaderGUI : ShaderGUI
             SetKeywordEnabled("_RECEIVE_SHADOWS", value);
         }
     }
+    bool PremultiplyAlpha
+    {
+        set
+        {
+            FindProperty("_PremulAlpha", properties).floatValue = value ? 1 : 0;
+            SetKeywordEnabled("_PREMULTIPLY_ALPHA", value);
+        }
+    }
     RenderQueue RenderQueue
     {
         set
@@ -61,6 +69,7 @@ public class LitShaderGUI : ShaderGUI
         DstBlend = BlendMode.Zero;
         ZWrite = true;
         ReceiveShadows = true;
+        PremultiplyAlpha = false;
         SetPassEnabled("ShadowCaster", true);
         RenderQueue = RenderQueue.Geometry;
     }
@@ -77,6 +86,7 @@ public class LitShaderGUI : ShaderGUI
         DstBlend = BlendMode.Zero;
         ZWrite = true;
         ReceiveShadows = true;
+        PremultiplyAlpha = false;
         SetPassEnabled("ShadowCaster", true);
         RenderQueue = RenderQueue.AlphaTest;
     }
@@ -93,6 +103,7 @@ public class LitShaderGUI : ShaderGUI
         DstBlend = BlendMode.Zero;
         ZWrite = true;
         ReceiveShadows = true;
+        PremultiplyAlpha = false;
         SetPassEnabled("ShadowCaster", true);
         RenderQueue = RenderQueue.AlphaTest;
     }
@@ -103,12 +114,13 @@ public class LitShaderGUI : ShaderGUI
             return;
 
         materialEditor.RegisterPropertyChangeUndo("Fade Preset");
-        Clipping = ClipMode.On;
+        Clipping = ClipMode.Off;
         Cull = CullMode.Off;
         SrcBlend = BlendMode.SrcAlpha;
         DstBlend = BlendMode.OneMinusSrcAlpha;
         ZWrite = false;
         ReceiveShadows = false;
+        PremultiplyAlpha = false;
         SetPassEnabled("ShadowCaster", false);
         RenderQueue = RenderQueue.Transparent;
     }
@@ -125,6 +137,41 @@ public class LitShaderGUI : ShaderGUI
         DstBlend = BlendMode.OneMinusSrcAlpha;
         ZWrite = false;
         ReceiveShadows = true;
+        PremultiplyAlpha = false;
+        SetPassEnabled("ShadowCaster", true);
+        RenderQueue = RenderQueue.Transparent;
+    }
+
+    void TransparentPreset()
+    {
+        if (!GUILayout.Button("Transparent"))
+            return;
+
+        materialEditor.RegisterPropertyChangeUndo("Transparent Preset");
+        Clipping = ClipMode.Off;
+        Cull = CullMode.Off;
+        SrcBlend = BlendMode.One;
+        DstBlend = BlendMode.OneMinusSrcAlpha;
+        ZWrite = false;
+        ReceiveShadows = false;
+        PremultiplyAlpha = true;
+        SetPassEnabled("ShadowCaster", false);
+        RenderQueue = RenderQueue.Transparent;
+    }
+
+    void TransparentWithShadowsPreset()
+    {
+        if (!GUILayout.Button("Transparent with Shadows"))
+            return;
+
+        materialEditor.RegisterPropertyChangeUndo("Transparent with Shadows Preset");
+        Clipping = ClipMode.Shadows;
+        Cull = CullMode.Off;
+        SrcBlend = BlendMode.One;
+        DstBlend = BlendMode.OneMinusSrcAlpha;
+        ZWrite = false;
+        ReceiveShadows = true;
+        PremultiplyAlpha = true;
         SetPassEnabled("ShadowCaster", true);
         RenderQueue = RenderQueue.Transparent;
     }
@@ -148,6 +195,8 @@ public class LitShaderGUI : ShaderGUI
             ClipDoublePreset();
             FadePreset();
             FadeWithShadowsPreset();
+            TransparentPreset();
+            TransparentWithShadowsPreset();
         }
     }
 

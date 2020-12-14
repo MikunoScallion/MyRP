@@ -1,12 +1,7 @@
 ﻿#ifndef MYRP_SHADOWCASTER_INCLUDED
     #define MYRP_SHADOWCASTER_INCLUDED
 
-    #include "ShaderLibrary/Common.hlsl"
-    #include "ShaderLibrary/UnityInstancing.hlsl"
-
-    UNITY_INSTANCING_BUFFER_START(PerInstance)
-    UNITY_DEFINE_INSTANCED_PROP(float4, _Color)
-    UNITY_INSTANCING_BUFFER_END(PerInstance)
+    #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
 
     TEXTURE2D(_MainTex);
     SAMPLER(sampler_MainTex);
@@ -29,6 +24,11 @@
     CBUFFER_END
 
     #define UNITY_MATRIX_M unity_ObjectToWorld
+    #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/UnityInstancing.hlsl"
+
+    UNITY_INSTANCING_BUFFER_START(PerInstance)
+    UNITY_DEFINE_INSTANCED_PROP(float4, _Color)
+    UNITY_INSTANCING_BUFFER_END(PerInstance)
 
     struct VertexInput 
     {

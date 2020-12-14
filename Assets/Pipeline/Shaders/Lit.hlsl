@@ -3,17 +3,29 @@
 
     // 必须在include UnityInstancing.hlsl之前，UnityInstancing中有对UNITY_MATRIX_M的重定义
     #define UNITY_MATRIX_M unity_ObjectToWorld
+    #define UNITY_MATRIX_I_M unity_WorldToObject
 
-    #include "ShaderLibrary/Common.hlsl"
-    #include "ShaderLibrary/UnityInstancing.hlsl"
-    #include "ShaderLibrary/Shadow/ShadowSamplingTent.hlsl"
+    #include "Lighting.hlsl"
+    #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
+    #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Shadow/ShadowSamplingTent.hlsl"
+    #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/ImageBasedLighting.hlsl"
+    #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/EntityLighting.hlsl"
+    #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/UnityInstancing.hlsl"
+    #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/EntityLighting.hlsl"
 
     UNITY_INSTANCING_BUFFER_START(PerInstance)
     UNITY_DEFINE_INSTANCED_PROP(float4, _Color)
+    UNITY_DEFINE_INSTANCED_PROP(float, _Smoothness)
+    UNITY_DEFINE_INSTANCED_PROP(float, _Metallic)
     UNITY_INSTANCING_BUFFER_END(PerInstance)
 
     TEXTURE2D(_MainTex);
     SAMPLER(sampler_MainTex);
+
+    TEXTURECUBE(unity_SpecCube0);
+    SAMPLER(samplerunity_SpecCube0);
+    TEXTURECUBE(unity_SpecCube1);
+    SAMPLER(samplerunity_SpecCube1);
 
     // 只有某些平台支持constant buffer, 具体可以看ShaderLibrary/API中各平台的CBUFFER_START(name)和CBUFFER_END宏定义
     // 由于一次cbuffer改动会造成整个cbuffer struct刷新因此按照不同的更新频率对cbuffer进行分组
@@ -27,9 +39,13 @@
     CBUFFER_END
 
     CBUFFER_START(UnityPerDraw)
-    float4x4 unity_ObjectToWorld;
+    float4x4 unity_ObjectToWorld, unity_WorldToObject;
     float4 unity_LightIndicesOffsetAndCount;
     float4 unity_4LightIndices0, unity_4LightIndices1;
+    float4 unity_SpecCube0_BoxMin, unity_SpecCube0_BoxMax;
+    float4 unity_SpecCube0_ProbePosition, unity_SpecCube0_HDR;
+    float4 unity_SpecCube1_BoxMin, unity_SpecCube1_BoxMax;
+    float4 unity_SpecCube1_ProbePosition, unity_SpecCube1_HDR;
     CBUFFER_END
 
     CBUFFER_START(UnityPerCamera)
@@ -46,17 +62,17 @@
     float4 _VisibleLightSpotDirections[MAX_VISIBLE_LIGHTS];
     CBUFFER_END
 
-    float3 DiffuseLight (int index, float3 normal, float3 worldPos, float shadowAttenuation) 
+    float3 GenericLight (int index, LitSurface surface, float shadowAttenuation) 
     {
         float3 lightColor = _VisibleLightColors[index].rgb;
         float4 lightPositionOrDirection = _VisibleLightDirectionsOrPositions[index];
         float4 lightAttenuation = _VisibleLightAttenuations[index];
         float3 lightSpotDirection = _VisibleLightSpotDirections[index].xyz;
 
-        float3 lightVector = lightPositionOrDirection.xyz - worldPos * lightPositionOrDirection.w;
+        float3 lightVector = lightPositionOrDirection.xyz - surface.position * lightPositionOrDirection.w;
         float3 lightDirection = normalize(lightVector);
 
-        float diffuse = saturate(dot(normal, lightDirection));
+        float3 color = LightSurface (surface, lightDirection);
         // lwrp用的是平缓的衰减: (1 - (d^2 / r^2)^2)^2   d:distance  r:light range 
         // lightAttenuation = 1 / r^2
         // ? https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/lights/
@@ -70,10 +86,9 @@
         spotFade *= spotFade;
 
         // ? 这里他又除以d^2不清楚为什么
-        // float distanceSqr = max(dot(lightVector, lightVector), 0.00001); 
-        // diffuse *= spotFade * rangeFade / distanceSqr; 
-        diffuse *= shadowAttenuation * spotFade * rangeFade; 
-        return diffuse * lightColor;
+        float distanceSqr = max(dot(lightVector, lightVector), 0.00001); 
+        color *= shadowAttenuation * spotFade * rangeFade / distanceSqr; 
+        return color * lightColor;
     }
 
 /****** 阴影 ******/
@@ -189,14 +204,47 @@
         return lerp(1, attenuation, _CascadedShadowStrength);
     }
 
-    float3 MainLight (float3 normal, float3 worldPos)
+    float3 MainLight (LitSurface surface)
     {
-        float shadowAttenuation = CascadedShadowAttenuation(worldPos);
+        float shadowAttenuation = CascadedShadowAttenuation(surface.position);
         float3 lightColor = _VisibleLightColors[0].rgb;
         float3 lightDirection = _VisibleLightDirectionsOrPositions[0].xyz;
-        float diffuse = saturate(dot(normal, lightDirection));
-        diffuse *= shadowAttenuation;
-        return diffuse * lightColor;
+        float3 color = LightSurface(surface, lightDirection);
+        color *= shadowAttenuation;
+        return color * lightColor;
+    }
+
+/****** 反射 ******/
+    float3 BoxProjection (float3 direction, float3 position,float4 cubemapPosition, float4 boxMin, float4 boxMax) 
+    {
+        UNITY_BRANCH
+        if (cubemapPosition.w > 0) 
+        {
+            float3 factors = ((direction > 0 ? boxMax.xyz : boxMin.xyz) - position) / direction;
+            float scalar = min(min(factors.x, factors.y), factors.z);
+            direction = direction * scalar + (position - cubemapPosition.xyz);
+        }
+        return direction;
+    }
+
+    float3 SampleEnvironment (LitSurface s) 
+    {
+        float3 reflectVector = reflect(-s.viewDir, s.normal);
+        float mip = PerceptualRoughnessToMipmapLevel(s.perceptualRoughness);
+
+        float3 uvw = BoxProjection(reflectVector, s.position, unity_SpecCube0_ProbePosition, unity_SpecCube0_BoxMin, unity_SpecCube0_BoxMax);
+
+        float4 sample = SAMPLE_TEXTURECUBE_LOD(unity_SpecCube0, samplerunity_SpecCube0, uvw, mip);
+        float3 color = DecodeHDREnvironment(sample, unity_SpecCube0_HDR);
+        float blend = unity_SpecCube0_BoxMin.w;
+        if (blend < 0.99999) 
+        {
+            uvw = BoxProjection(reflectVector, s.position, unity_SpecCube1_ProbePosition, unity_SpecCube1_BoxMin, unity_SpecCube1_BoxMax);
+            sample = SAMPLE_TEXTURECUBE_LOD(unity_SpecCube1, samplerunity_SpecCube0, uvw, mip);
+            color = lerp(DecodeHDREnvironment(sample, unity_SpecCube1_HDR), color, blend);
+        }
+
+        return color;
     }
 
     struct VertexInput 
@@ -226,15 +274,22 @@
         float4 worldPos = mul(UNITY_MATRIX_M, float4(input.pos.xyz, 1.0));
         output.clipPos = mul(unity_MatrixVP, worldPos);
 
+#if defined(UNITY_ASSUME_UNIFORM_SCALING)
         output.normal = mul((float3x3) UNITY_MATRIX_M, input.normal);
+#else
+        output.normal = normalize(mul(input.normal, (float3x3)UNITY_MATRIX_I_M));
+#endif
 
         output.worldPos = worldPos.xyz;
 
+        LitSurface surface = GetLitSurfaceVertex(output.normal, output.worldPos);
+
+        // 第五个光源开始到最多第八个是逐顶点光
         output.vertexLighting = 0;
         for (int i = 4; i < min(unity_LightIndicesOffsetAndCount.y, 8); i++) 
         {
             int lightIndex = unity_4LightIndices1[i - 4];
-            output.vertexLighting += DiffuseLight(lightIndex, output.normal, output.worldPos, 1);
+            output.vertexLighting += GenericLight(lightIndex, surface, 1);
         }
 
         output.uv = TRANSFORM_TEX(input.uv, _MainTex);
@@ -251,23 +306,36 @@
 
         float4 albedoAlpha = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv);
         albedoAlpha.rgb *= UNITY_ACCESS_INSTANCED_PROP(PerInstance, _Color).rgb;
+
 #if defined(_CLIPPING_ON)
         clip(albedoAlpha.a - _Cutoff);
 #endif
 
-        float3 diffuseLight = input.vertexLighting;
+        float3 viewDir = normalize(_WorldSpaceCameraPos - input.worldPos.xyz);
+
+        LitSurface surface = GetLitSurface(input.normal, input.worldPos, viewDir, albedoAlpha.rgb, 
+                                            UNITY_ACCESS_INSTANCED_PROP(PerInstance, _Metallic), 
+                                            UNITY_ACCESS_INSTANCED_PROP(PerInstance, _Smoothness));
+
+        #if defined(_PREMULTIPLY_ALPHA)
+            PremultiplyAlpha(surface, albedoAlpha.a);
+        #endif
+
+        float3 color = input.vertexLighting * surface.diffuse;
+
 #if defined(_CASCADED_SHADOWS_HARD) || defined(_CASCADED_SHADOWS_SOFT)
-        diffuseLight += MainLight(input.normal, input.worldPos);
+        color += MainLight(surface);
 #endif
 
+        // 前最多四个光源是逐像素光
         for (int i = 0; i < min(unity_LightIndicesOffsetAndCount.y, 4); i++)
         {
             int lightIndex = unity_4LightIndices0[i];
             float shadowAttenuation = ShadowAttenuation(lightIndex, input.worldPos);
-            diffuseLight += DiffuseLight(lightIndex, input.normal, input.worldPos, shadowAttenuation);
+            color += GenericLight(lightIndex, surface, shadowAttenuation);
         }
 
-        float3 color = albedoAlpha.rgb * diffuseLight;
+        color += ReflectEnvironment(surface, SampleEnvironment(surface));
 
         return float4(color, albedoAlpha.a);
     }
